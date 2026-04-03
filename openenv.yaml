@@ -1,0 +1,100 @@
+name: IncidentResponseEnv
+version: "1.0.0"
+description: >
+  A production incident response simulation environment.
+  An LLM agent receives live alerts, logs, and metrics from a degraded system
+  and must investigate, diagnose the root cause, and apply the correct fix
+  before the system fully fails. Reward is partial and time-sensitive.
+
+observation_space:
+  type: dict
+  fields:
+    - name: task_id
+      type: str
+    - name: task_difficulty
+      type: str
+      enum: [easy, medium, hard]
+    - name: step_count
+      type: int
+    - name: max_steps
+      type: int
+    - name: time_budget
+      type: int
+    - name: time_remaining
+      type: int
+    - name: alerts
+      type: list[Alert]
+    - name: metrics
+      type: list[Metric]
+    - name: recent_logs
+      type: list[LogEntry]
+    - name: services
+      type: dict[str, str]
+    - name: done
+      type: bool
+    - name: reward
+      type: float
+    - name: total_reward
+      type: float
+    - name: message
+      type: str
+
+action_space:
+  type: dict
+  fields:
+    - name: action_type
+      type: str
+      enum: [investigate, diagnose, fix, check_metrics, escalate]
+    - name: target
+      type: str
+      description: "Service name or component to act on"
+    - name: details
+      type: str
+      description: "Additional context for diagnose or fix actions"
+
+tasks:
+  - id: single_service_down
+    difficulty: easy
+    description: "A single microservice is OOM and down. Clear evidence in logs."
+    max_steps: 10
+    time_budget: 300
+    reward_threshold: 0.5
+
+  - id: cascading_failure
+    difficulty: medium
+    description: "DB connection exhaustion causes cascading failure across services. Alerts show symptoms, not root cause."
+    max_steps: 15
+    time_budget: 300
+    reward_threshold: 0.5
+
+  - id: memory_leak
+    difficulty: hard
+    description: "Silent memory leak growing for 6 hours. No CRITICAL alert. Agent must correlate metric trends."
+    max_steps: 20
+    time_budget: 300
+    reward_threshold: 0.5
+
+reward:
+  range: [0.0, 1.0]
+  partial_signals: true
+  breakdown:
+    - component: correct_diagnosis
+      weight: 0.40
+    - component: correct_fix
+      weight: 0.35
+    - component: time_bonus
+      weight: 0.15
+      description: "Proportional to time_remaining / time_budget at fix time"
+    - component: efficiency_bonus
+      weight: 0.10
+      description: "1 - (wrong_actions / total_actions)"
+    - component: wrong_action_penalty
+      weight: -0.10
+      description: "Applied per wrong diagnosis or fix attempt"
+
+endpoints:
+  reset: "POST /reset"
+  step: "POST /step"
+  state: "GET /state"
+  tasks: "GET /tasks"
+  health: "GET /health"
