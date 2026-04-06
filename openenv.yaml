@@ -8,49 +8,59 @@ description: >
 
 observation_space:
   type: dict
-  fields:
-    - name: task_id
-      type: str
-    - name: task_difficulty
-      type: str
+  properties:
+    task_id:
+      type: string
+    task_difficulty:
+      type: string
       enum: [easy, medium, hard]
-    - name: step_count
-      type: int
-    - name: max_steps
-      type: int
-    - name: time_budget
-      type: int
-    - name: time_remaining
-      type: int
-    - name: alerts
-      type: list[Alert]
-    - name: metrics
-      type: list[Metric]
-    - name: recent_logs
-      type: list[LogEntry]
-    - name: services
-      type: dict[str, str]
-    - name: done
-      type: bool
-    - name: reward
-      type: float
-    - name: total_reward
-      type: float
-    - name: message
-      type: str
+    step_count:
+      type: integer
+    max_steps:
+      type: integer
+    time_budget:
+      type: integer
+    time_remaining:
+      type: integer
+    alerts:
+      type: array
+      items:
+        type: object
+    metrics:
+      type: array
+      items:
+        type: object
+    recent_logs:
+      type: array
+      items:
+        type: object
+    services:
+      type: object
+    done:
+      type: boolean
+    reward:
+      type: number
+    total_reward:
+      type: number
+    message:
+      type: string
 
 action_space:
   type: dict
-  fields:
-    - name: action_type
-      type: str
+  properties:
+    action_type:
+      type: string
       enum: [investigate, diagnose, fix, check_metrics, escalate]
-    - name: target
-      type: str
+    target:
+      type: string
       description: "Service name or component to act on"
-    - name: details
-      type: str
+    details:
+      type: string
       description: "Additional context for diagnose or fix actions"
+  required:
+    - action_type
+    - target
+    - details
 
 tasks:
   - id: single_service_down
@@ -77,24 +87,36 @@ tasks:
 reward:
   range: [0.0, 1.0]
   partial_signals: true
-  breakdown:
-    - component: correct_diagnosis
+  components:
+    - name: correct_diagnosis
       weight: 0.40
-    - component: correct_fix
+    - name: correct_fix
       weight: 0.35
-    - component: time_bonus
+    - name: time_bonus
       weight: 0.15
       description: "Proportional to time_remaining / time_budget at fix time"
-    - component: efficiency_bonus
+    - name: efficiency_bonus
       weight: 0.10
       description: "1 - (wrong_actions / total_actions)"
-    - component: wrong_action_penalty
-      weight: -0.10
-      description: "Applied per wrong diagnosis or fix attempt"
 
-endpoints:
-  reset: "POST /reset"
-  step: "POST /step"
-  state: "GET /state"
-  tasks: "GET /tasks"
-  health: "GET /health"
+api_endpoints:
+  reset:
+    method: POST
+    path: /reset
+    description: "Initialize or reset the environment"
+  step:
+    method: POST
+    path: /step
+    description: "Take an action in the environment"
+  state:
+    method: GET
+    path: /state
+    description: "Get current environment state"
+  tasks:
+    method: GET
+    path: /tasks
+    description: "Get list of available tasks"
+  health:
+    method: GET
+    path: /health
+    description: "Health check endpoint"
