@@ -94,7 +94,7 @@ def run_task(task_id: str) -> float:
     resp.raise_for_status()
     state = resp.json()
 
-    print(f"[START] task_id={task_id} difficulty={state['task_difficulty']}", flush=True)
+    print(f"[START] task={task_id}", flush=True)
 
     history = []
     step = 0
@@ -112,7 +112,7 @@ def run_task(task_id: str) -> float:
             resp.raise_for_status()
             result = resp.json()
         except Exception as e:
-            print(f"[STEP] step={step+1} action=escalate target=oncall reward=0.0000 total_reward={state.get('total_reward', 0.0):.4f}", flush=True)
+            print(f"[STEP] step={step+1} reward=0.0000", flush=True)
             break
 
         state = result["state"]
@@ -120,9 +120,7 @@ def run_task(task_id: str) -> float:
         step += 1
 
         print(
-            f"[STEP] step={step} action={action.get('action_type', 'unknown')} "
-            f"target={action.get('target', 'unknown')} "
-            f"reward={reward:.4f} total_reward={state.get('total_reward', 0.0):.4f}",
+            f"[STEP] step={step} reward={reward:.4f}",
             flush=True,
         )
 
@@ -131,7 +129,7 @@ def run_task(task_id: str) -> float:
 
     final_score = round(state.get("total_reward", 0.0), 4)
     success = final_score >= 0.5
-    print(f"[END] task_id={task_id} final_score={final_score} success={str(success).lower()}", flush=True)
+    print(f"[END] task={task_id} score={final_score} steps={step}", flush=True)
     return final_score
 
 
@@ -146,7 +144,7 @@ def main():
             score = run_task(task_id)
             all_scores[task_id] = score
         except Exception as e:
-            print(f"[END] task_id={task_id} final_score=0.0 success=false", flush=True)
+            print(f"[END] task={task_id} score=0.0 steps=0", flush=True)
             all_scores[task_id] = 0.0
         time.sleep(2)
 
