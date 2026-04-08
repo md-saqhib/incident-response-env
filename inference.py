@@ -12,17 +12,17 @@ import requests
 from openai import OpenAI
 
 # ── Required env vars (checklist compliance) ───────────────────────────────
-API_BASE_URL = os.getenv("API_BASE_URL", "https://api-inference.huggingface.co/v1/")
-MODEL_NAME   = os.getenv("MODEL_NAME",   "meta-llama/Llama-3.3-70B-Instruct")
-HF_TOKEN     = os.getenv("HF_TOKEN", "")
+API_BASE_URL = os.getenv("API_BASE_URL")
+API_KEY      = os.getenv("API_KEY")
+MODEL_NAME   = os.getenv("MODEL_NAME", "meta-llama/Llama-3.3-70B-Instruct")
 
 # Optional: for from_docker_image() usage
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 
 ENV_URL = os.getenv("ENV_URL", "http://localhost:8000")
 
-# ── OpenAI client pointing at HuggingFace ─────────────────────────────────
-client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN if HF_TOKEN else "dummy-token")
+# ── OpenAI client pointing at evaluator LiteLLM proxy ─────────────────────
+client = None
 
 TASKS = ["single_service_down", "cascading_failure", "memory_leak"]
 
@@ -74,15 +74,22 @@ def state_to_prompt(state: dict) -> str:
     return "\n".join(lines)
 
 
+def _get_client() -> OpenAI:
+    global client
+    if client is None:
+        if not API_BASE_URL or not API_KEY:
+            raise RuntimeError("Missing required API_BASE_URL or API_KEY")
+        client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+    return client
+
+
 def get_action(state: dict, history: list) -> dict:
-    if not HF_TOKEN:
-        # Provide a dummy action if no token is available to prevent crash and verify output format
-        return {"action_type": "escalate", "target": "oncall", "details": "missing token"}
+    llm_client = _get_client()
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages.extend(history)
     messages.append({"role": "user", "content": state_to_prompt(state)})
-    response = client.chat.completions.create(
+    response = llm_client.chat.completions.create(
         model=MODEL_NAME,
         messages=messages,
         max_tokens=200,
@@ -142,8 +149,9 @@ def run_task(task_id: str) -> float:
 
 
 def main():
-    if not HF_TOKEN:
-        print("WARNING: HF_TOKEN environment variable is not set. Inference operations will use dummy fallbacks.", file=sys.stderr)
+    if not API_BASE_URL or not API_KEY:
+        print("ERROR: API_BASE_URL and API_KEY environment variables are required.", file=sys.stderr)
+        sys.exit(1)
 
     all_scores = {}
     for task_id in TASKS:
