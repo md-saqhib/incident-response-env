@@ -45,6 +45,21 @@ Strategy:
 """
 
 
+def _get_client() -> OpenAI:
+    """Get OpenAI client configured to use injected LiteLLM proxy or fallback."""
+    global client
+    if client is None:
+        if API_BASE_URL and API_KEY:
+            client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+        else:
+            # Fallback to HF inference API for graceful degradation
+            client = OpenAI(
+                base_url="https://api-inference.huggingface.co/v1/",
+                api_key="fallback-key-for-evaluation"
+            )
+    return client
+
+
 def state_to_prompt(state: dict) -> str:
     lines = [
         "=== PRODUCTION INCIDENT ===",
