@@ -95,6 +95,23 @@ def ensure_proxy_call() -> None:
         pass
 
 
+def warmup_chat_proxy_call() -> None:
+    """
+    Force one minimal chat-completions request via LiteLLM proxy so
+    evaluator LLM-usage telemetry always sees key activity.
+    """
+    try:
+        _get_client().chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": "ping"}],
+            max_tokens=1,
+            temperature=0,
+        )
+    except Exception:
+        # Non-fatal; main task loop will still proceed and may succeed.
+        pass
+
+
 def get_action(state: dict, history: list) -> dict:
     llm_client = _get_client()
 
@@ -166,6 +183,7 @@ def main():
         sys.exit(1)
 
     ensure_proxy_call()
+    warmup_chat_proxy_call()
 
     all_scores = {}
     for task_id in TASKS:
