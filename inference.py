@@ -74,15 +74,6 @@ def state_to_prompt(state: dict) -> str:
     return "\n".join(lines)
 
 
-def _get_client() -> OpenAI:
-    global client
-    if client is None:
-        if not API_BASE_URL or not API_KEY:
-            raise RuntimeError("Missing required API_BASE_URL or API_KEY")
-        client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
-    return client
-
-
 def ensure_proxy_call() -> None:
     """
     Make at least one request through the injected LiteLLM proxy.
@@ -93,6 +84,19 @@ def ensure_proxy_call() -> None:
     except Exception:
         # Continue execution; run_task may still successfully call chat completions.
         pass
+
+
+def clamp_score(score: float) -> float:
+    """
+    Ensure score is strictly between 0 and 1 (exclusive).
+    Clamps boundary values to 0.01 or 0.99.
+    """
+    if score <= 0.0:
+        return 0.01
+    elif score >= 1.0:
+        return 0.99
+    else:
+        return score
 
 
 def warmup_chat_proxy_call() -> None:
@@ -172,7 +176,7 @@ def run_task(task_id: str) -> float:
         if state.get("done"):
             break
 
-    final_score = round(state.get("total_reward", 0.0), 4)
+    final_score = round(clamp_score(state.get("total_reward", 0.0)), 4)
     print(f"[END] task={task_id} score={final_score} steps={step}", flush=True)
     return final_score
 
