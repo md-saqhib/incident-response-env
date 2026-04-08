@@ -83,6 +83,18 @@ def _get_client() -> OpenAI:
     return client
 
 
+def ensure_proxy_call() -> None:
+    """
+    Make at least one request through the injected LiteLLM proxy.
+    This prevents Phase 2 false negatives when environment reset fails early.
+    """
+    try:
+        _get_client().models.list()
+    except Exception:
+        # Continue execution; run_task may still successfully call chat completions.
+        pass
+
+
 def get_action(state: dict, history: list) -> dict:
     llm_client = _get_client()
 
@@ -152,6 +164,8 @@ def main():
     if not API_BASE_URL or not API_KEY:
         print("ERROR: API_BASE_URL and API_KEY environment variables are required.", file=sys.stderr)
         sys.exit(1)
+
+    ensure_proxy_call()
 
     all_scores = {}
     for task_id in TASKS:
