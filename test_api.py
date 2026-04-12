@@ -1,68 +1,81 @@
 #!/usr/bin/env python3
-"""Test API endpoints directly"""
+"""Pytest suite for FastAPI endpoints."""
+
 import sys
-import json
-sys.path.insert(0, '/Users/sabaanjum/Documents/Meta Hackathon/incident-response-env')
+from pathlib import Path
 
 from fastapi.testclient import TestClient
-from app.main import app
+
+REPO_ROOT = Path(__file__).resolve().parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from app.main import app  # type: ignore[reportMissingImports]
+
 
 client = TestClient(app)
 
-print("Testing API Endpoints...")
-print("=" * 60)
 
-# Test health
-print("\n1. Testing /health endpoint")
-response = client.get("/health")
-print(f"   Status: {response.status_code}")
-print(f"   Response: {response.json()}")
+def test_health_endpoint() -> None:
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
 
-# Test root
-print("\n2. Testing / endpoint")
-response = client.get("/")
-print(f"   Status: {response.status_code}")
-data = response.json()
-print(f"   Name: {data['name']}")
-print(f"   Endpoints: {data['endpoints']}")
 
-# Test tasks list
-print("\n3. Testing /tasks endpoint")
-response = client.get("/tasks")
-print(f"   Status: {response.status_code}")
-tasks = response.json()
-for task in tasks:
-    print(f"   - {task['id']}: {task['difficulty']} ({task['max_steps']} steps)")
+def test_root_endpoint() -> None:
+    response = client.get("/")
+    assert response.status_code == 200
 
-# Test reset
-print("\n4. Testing /reset endpoint")
-response = client.post("/reset", json={"task_id": "single_service_down"})
-print(f"   Status: {response.status_code}")
-state = response.json()
-print(f"   Task: {state['task_id']}")
-print(f"   Difficulty: {state['task_difficulty']}")
-print(f"   Services: {list(state['services'].keys())}")
+    payload = response.json()
+    assert payload["name"] == "IncidentResponseEnv"
+    assert payload["version"] == "1.0.0"
+    assert "/reset" in payload["endpoints"]
+    assert "/step" in payload["endpoints"]
 
-# Test step
-print("\n5. Testing /step endpoint")
-response = client.post("/step", json={
-    "action_type": "investigate",
-    "target": "payment-service",
-    "details": ""
-})
-print(f"   Status: {response.status_code}")
-result = response.json()
-print(f"   Reward: {result['reward']}")
-print(f"   Total Reward: {result['state']['total_reward']}")
-print(f"   Feedback: {result['info']['feedback'][:60]}...")
 
-# Test state
-print("\n6. Testing /state endpoint")
-response = client.get("/state")
-print(f"   Status: {response.status_code}")
-state = response.json()
-print(f"   Step count: {state['step_count']}")
-print(f"   Total reward: {state['total_reward']}")
+def test_tasks_endpoint_contract() -> None:
+    response = client.get("/tasks")
+    assert response.status_code == 200
 
-print("\n" + "=" * 60)
-print("✓✓✓ All API tests passed! ✓✓✓")
+    tasks = response.json()
+    task_ids = {t["id"] for t in tasks}
+    assert {"single_service_down", "cascading_failure", "memory_leak"}.issubset(task_ids)
+
+    for task in tasks:
+        assert "difficulty" in task
+        assert "max_steps" in task
+        assert "time_budget" in task
+
+
+def test_reset_then_step_then_state_flow() -> None:
+    reset_response = client.post("/reset", json={"task_id": "single_service_down"})
+    assert reset_response.status_code == 200
+
+    state = reset_response.json()
+    assert state["task_id"] == "single_service_down"
+    assert state["task_difficulty"] == "easy"
+    assert "payment-service" in state["services"]
+
+    step_response = client.post(
+        "/step",
+        json={"action_type": "investigate", "target": "payment-service", "details": ""},
+    )
+    assert step_response.status_code == 200
+
+    result = step_response.json()
+    assert "reward" in result
+    assert "state" in result
+    assert "info" in result
+    assert isinstance(result["reward"], (int, float))
+    assert "feedback" in result["info"]
+
+    current_state_response = client.get("/state")
+    assert current_state_response.status_code == 200
+    current_state = current_state_response.json()
+    assert current_state["step_count"] >= 1
+
+
+def test_reset_invalid_task_returns_400() -> None:
+    response = client.post("/reset", json={"task_id": "not-a-real-task"})
+    assert response.status_code == 400
+    assert "Unknown task_id" in response.json()["detail"]

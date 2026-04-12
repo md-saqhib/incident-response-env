@@ -1,39 +1,60 @@
 #!/usr/bin/env python3
-"""Quick test of the IncidentResponseEnv"""
+"""Pytest suite for IncidentResponseEnv core behavior."""
+
 import sys
-sys.path.insert(0, '/Users/sabaanjum/Documents/Meta Hackathon/incident-response-env')
+from pathlib import Path
 
-from app.env import IncidentResponseEnv
-from app.models import Action, ActionType
+import pytest
 
-# Test reset
-env = IncidentResponseEnv()
-state = env.reset("single_service_down")
-print(f"✓ Reset successful. Task: {state.task_id}, Difficulty: {state.task_difficulty}")
-print(f"  Max steps: {state.max_steps}, Time budget: {state.time_budget}s")
-print(f"  Services: {list(state.services.keys())}")
-print(f"  Alerts: {len(state.alerts)}")
+REPO_ROOT = Path(__file__).resolve().parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-# Test step
-action = Action(
-    action_type=ActionType.CHECK_METRICS,
-    target="payment-service",
-    details=""
-)
-result = env.step(action)
-print(f"\n✓ Step successful. Reward: {result.reward}, Total: {result.state.total_reward}")
-print(f"  Feedback: {result.info.get('feedback', '')[:80]}")
+from app.env import IncidentResponseEnv  # type: ignore[reportMissingImports]
+from app.models import Action, ActionType  # type: ignore[reportMissingImports]
 
-# Test state retrieval
-state = env.get_state()
-print(f"\n✓ Get state successful. Step count: {state.step_count}")
 
-# Test cascading failure task
-state = env.reset("cascading_failure")
-print(f"\n✓ Cascading failure task reset. Services: {list(state.services.keys())}")
+@pytest.fixture
+def env() -> IncidentResponseEnv:
+    return IncidentResponseEnv()
 
-# Test memory leak task
-state = env.reset("memory_leak")
-print(f"\n✓ Memory leak task reset. Alerts: {[a.service for a in state.alerts]}")
 
-print("\n✓✓✓ All basic tests passed! ✓✓✓")
+def test_reset_known_task(env: IncidentResponseEnv) -> None:
+    state = env.reset("single_service_down")
+    assert state.task_id == "single_service_down"
+    assert state.task_difficulty == "easy"
+    assert state.max_steps == 10
+    assert state.time_budget == 300
+    assert "payment-service" in state.services
+    assert len(state.alerts) > 0
+
+
+def test_reset_unknown_task_raises(env: IncidentResponseEnv) -> None:
+    with pytest.raises(ValueError, match="Unknown task_id"):
+        env.reset("unknown-task")
+
+
+def test_step_updates_state_and_reward(env: IncidentResponseEnv) -> None:
+    env.reset("single_service_down")
+    result = env.step(Action(action_type=ActionType.CHECK_METRICS, target="payment-service", details=""))
+
+    assert isinstance(result.reward, float)
+    assert result.state.step_count == 1
+    assert result.state.total_reward == pytest.approx(result.reward, abs=1e-4)
+    assert "feedback" in result.info
+
+
+def test_get_state_requires_reset(env: IncidentResponseEnv) -> None:
+    with pytest.raises(RuntimeError, match="Call /reset first"):
+        env.get_state()
+
+
+def test_step_requires_reset(env: IncidentResponseEnv) -> None:
+    with pytest.raises(RuntimeError, match="Call /reset before /step"):
+        env.step(Action(action_type=ActionType.ESCALATE, target="oncall", details=""))
+
+
+def test_list_tasks_contains_expected_ids(env: IncidentResponseEnv) -> None:
+    tasks = env.list_tasks()
+    task_ids = {t.id for t in tasks}
+    assert task_ids == {"single_service_down", "cascading_failure", "memory_leak"}
