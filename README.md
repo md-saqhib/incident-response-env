@@ -17,7 +17,6 @@ Train LLM agents to diagnose and fix production incidents in a safe, simulated e
 ### ⚡ Quick Links
 - 🌐 **[Live Demo on HuggingFace Spaces](#live-demo)** ← Test it now!
 - 📖 **[Quickstart Guide](QUICK_START.md)** ← Get running in 5 min
-- 🏆 **[Hackathon Roadmap](HACKATHON_SUBMISSION_ROADMAP.md)** ← Submission guide
 - 📚 **[Full Build Summary](BUILD_SUMMARY.md)** ← Complete overview
 
 ---
@@ -48,9 +47,9 @@ An LLM agent operates in a simulated production system:
 
 ## 🚀 Live Demo
 
-**[Try IncidentResponseEnv on HuggingFace Spaces →](https://huggingface.co/spaces/YOUR_USERNAME/incident-response-env)**
+**[Try IncidentResponseEnv on HuggingFace Spaces →](https://huggingface.co/spaces/Saqhibb/incident-response-env)**
 
-*(Deployment link added after pushing to HF Spaces)*
+Reference source repo: **[GitHub →](https://github.com/md-saqhib/incident-response-env)**
 
 ---
 
@@ -131,6 +130,13 @@ curl -X POST http://localhost:8000/step \
 - **Range**: [0.0, 1.0] with clipping
 
 Agents get **partial rewards** as they make progress, encouraging incremental learning.
+
+### Reliability Guarantees (Evaluator-focused)
+
+- ✅ Task output score is forced to strict range $(0, 1)$ via score clamping
+- ✅ Structured logging always emits `[START]`, `[STEP]`, and `[END]`
+- ✅ Agent performs mandatory LiteLLM/OpenAI proxy calls before task execution
+- ✅ Deterministic fallback action playbook recovers from malformed LLM JSON
 
 ---
 

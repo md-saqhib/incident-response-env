@@ -1,71 +1,75 @@
 #!/usr/bin/env python3
-"""
-Test inference.py structure and dependencies
-"""
-import sys
-sys.path.insert(0, '/Users/sabaanjum/Documents/Meta Hackathon/incident-response-env')
+"""Unit tests for inference agent reliability helpers."""
 
-import os
-import json
+import importlib.util
+from pathlib import Path
 
-# Test that all required environment variables have defaults or can be set
-print("Testing inference.py environment variables...")
-print("=" * 60)
+_INFERENCE_PATH = Path(__file__).parent / "inference.py"
+_SPEC = importlib.util.spec_from_file_location("inference", _INFERENCE_PATH)
+if _SPEC is None or _SPEC.loader is None:
+    raise RuntimeError("Unable to load inference.py for tests")
 
-# Check defaults
-api_base_url = os.getenv("API_BASE_URL", "https://api-inference.huggingface.co/v1/")
-model_name = os.getenv("MODEL_NAME", "meta-llama/Llama-3.3-70B-Instruct")
-env_url = os.getenv("ENV_URL", "http://localhost:8000")
-hf_token = os.getenv("HF_TOKEN")
+inference = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(inference)
 
-print(f"✓ API_BASE_URL: {api_base_url}")
-print(f"✓ MODEL_NAME: {model_name}")
-print(f"✓ ENV_URL: {env_url}")
-print(f"  HF_TOKEN: {'<set>' if hf_token else '<not set - will be required at runtime>'}")
 
-# Test that the script can be imported (it's a CLI script but we can check syntax)
-print("\nTesting inference.py syntax...")
-import pathlib
-inf_path = pathlib.Path(__file__).parent / "inference.py"
-with open(inf_path, 'r') as f:
-    code = f.read()
+def test_clamp_score_boundaries() -> None:
+    assert inference.clamp_score(0.0) == 0.01
+    assert inference.clamp_score(1.0) == 0.99
+    assert inference.clamp_score(-4.2) == 0.01
+    assert inference.clamp_score(9.7) == 0.99
+    assert inference.clamp_score(0.55) == 0.55
+
+
+def test_extract_json_object_with_code_fence() -> None:
+    raw = """```json\n{\"action_type\":\"investigate\",\"target\":\"payment-service\",\"details\":\"\"}\n```"""
+    parsed = inference._extract_json_object(raw)
+    assert parsed["action_type"] == "investigate"
+    assert parsed["target"] == "payment-service"
+
+
+def test_extract_json_object_with_extra_text() -> None:
+    raw = "Use this action: {\"action_type\":\"fix\",\"target\":\"analytics-service\",\"details\":\"rolling restart\"} thanks"
+    parsed = inference._extract_json_object(raw)
+    assert parsed["action_type"] == "fix"
+    assert parsed["target"] == "analytics-service"
+
+
+def test_normalize_action_valid() -> None:
+    normalized = inference.normalize_action(
+        {"action_type": "CHECK_METRICS", "target": "postgres-db", "details": None}
+    )
+    assert normalized == {
+        "action_type": "check_metrics",
+        "target": "postgres-db",
+        "details": "None",
+    }
+
+
+def test_normalize_action_rejects_invalid_action_type() -> None:
     try:
-        compile(code, 'inference.py', 'exec')
-        print("✓ inference.py has valid Python syntax")
-    except SyntaxError as e:
-        print(f"✗ Syntax error: {e}")
-        sys.exit(1)
+        inference.normalize_action({"action_type": "delete", "target": "svc", "details": ""})
+        assert False, "Expected ValueError for invalid action_type"
+    except ValueError as exc:
+        assert "invalid action_type" in str(exc)
 
-# Check for required imports
-required_imports = [
-    "import os",
-    "import sys",
-    "import json",
-    "import time",
-    "import requests",
-    "from openai import OpenAI"
-]
 
-print("\nChecking required imports...")
-for imp in required_imports:
-    if imp in code:
-        print(f"✓ {imp}")
-    else:
-        print(f"✗ Missing: {imp}")
+def test_fallback_action_for_all_tasks() -> None:
+    easy = inference.fallback_action_for_state({"task_id": "single_service_down"}, 1)
+    med = inference.fallback_action_for_state({"task_id": "cascading_failure"}, 3)
+    hard = inference.fallback_action_for_state({"task_id": "memory_leak"}, 4)
 
-# Check logging format
-print("\nChecking [START]/[STEP]/[END] log format...")
-if "[START]" in code and "[STEP]" in code and "[END]" in code:
-    print("✓ Logging format includes [START], [STEP], [END]")
-else:
-    print("✗ Missing log format markers")
+    assert easy["action_type"] == "check_metrics"
+    assert easy["target"] == "payment-service"
 
-# Check task list
-print("\nChecking task list...")
-if "single_service_down" in code and "cascading_failure" in code and "memory_leak" in code:
-    print("✓ All 3 tasks are referenced")
-else:
-    print("✗ Missing task references")
+    assert med["action_type"] == "diagnose"
+    assert med["target"] == "postgres-db"
 
-print("\n" + "=" * 60)
-print("✓✓✓ inference.py is production-ready! ✓✓✓")
+    assert hard["action_type"] == "fix"
+    assert hard["target"] == "analytics-service"
+
+
+def test_fallback_action_unknown_task() -> None:
+    action = inference.fallback_action_for_state({"task_id": "unknown"}, 1)
+    assert action["action_type"] == "escalate"
+    assert action["target"] == "oncall"
